@@ -7,16 +7,7 @@ import os
 import sqlite3
 import ast
 import argparse
-
-class AutoVivification(dict):
-    """Implementation of perl's autovivification feature."""
-    def __getitem__(self, item):
-        try:
-            return dict.__getitem__(self, item)
-        except KeyError:
-            value = self[item] = type(self)()
-            return value
-
+import sys
 
 
 class logressor:
@@ -28,7 +19,7 @@ class logressor:
         self.debug=False
         self.file=''
         self.regexp=''
-        self.format=''
+        self.format={}
         self.sqlite=''
         self.table='data'
         self.drop=False
@@ -50,7 +41,8 @@ class logressor:
         self.regexp=regexp
     def setInputFormat(self, format):
         """Set the class variable format."""
-        self.format=format
+        if format != None:
+            self.format=format
     def setInputSqlite(self, sqlite):
         """Set the class variable sqlite."""
         self.sqlite=sqlite
@@ -74,13 +66,16 @@ class logressor:
         print ""
     def process(self):
         """Start the program!"""
+        self.loadFields()
         finalSql="\n"
         if self.drop:
             finalSql = finalSql + "drop table if exists " + self.table + ";\n"
         finalSql = finalSql + "create table if not exists " + self.table +" \n" + self.sql
         self.sql = finalSql
+
         if self.debug:
             self.showOptions()
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process start"
 
         try:
             self.connection = sqlite3.connect(self.sqlite)
@@ -92,14 +87,51 @@ class logressor:
             self.parseFile()
         except sqlite3.Error, e:
             print "Sqlite error %s:" % e.args[0]
-            sys.exit(1)
+            sys.exit()
         finally:
-            #self.testFormat(self.format)
             if self.connection:
                 self.connection.close()
+        if self.debug:
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process end"
+        print self.file + " loaded into " + self.sqlite
+
+    def loadFields(self):
+        regexp1=re.compile("\?P<(\w+)>")
+        results=regexp1.findall(self.regexp) 
+        if results:
+            self.fields=results
+        self.sql='(\n'
+        try:
+            formatDict=ast.literal_eval(self.format)
+        except:
+            formatDict={}
+        for fieldName in self.fields:
+            fieldType=''
+            fieldFormat=''
+            if formatDict.get(fieldName):
+                if type(formatDict.get(fieldName)) is dict:
+                    if formatDict.get(fieldName).get('type'):
+                        fieldType=formatDict.get(fieldName).get('type')
+                    else:
+                        fieldType='text'
+                    if formatDict.get(fieldName).get('format') and fieldType == 'timestamp':
+                        fieldFormat=formatDict.get(fieldName).get('format')
+                        self.timestamps[fieldName]=fieldFormat
+                        fieldType = 'text'
+                elif type(formatDict.get(fieldName)) is str:
+                    fieldType=formatDict.get(fieldName)
+                else:
+                    fieldType='text'
+                if not fieldType in ('real', 'text', 'integer'):
+                    fieldType='text'
+            else:
+                fieldType='text'
+            self.sql = self.sql + "  " + fieldName + " " + fieldType + ", \n"
+        self.sql=self.sql[0:-3] + '\n)\n'
+
+
 
     def testFormat(self, format):
-        self.sql='(\n'
         try:
             success=True
             formatDict=ast.literal_eval(format)
@@ -113,25 +145,24 @@ class logressor:
                         success=False
                     if attributes.get('format') and fieldType == 'timestamp':
                         fieldFormat=attributes.get('format')
-                        self.timestamps[fieldName]=fieldFormat
                         fieldType = 'text'
                 elif type(attributes) is str:
                     fieldType=attributes
                 else:
                     success=False
                 if not fieldType in ('real', 'text', 'integer'):
-                    success=false
-                self.fields.append(fieldName)
-                self.sql = self.sql + "  " + fieldName + " " + fieldType + ", \n"
-            self.sql=self.sql[0:-3] + '\n)\n'
+                    success=False
             return success
         except Exception, e:
             return False
 
     def parseFile(self):
+        if self.debug:
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" parse start"
+        linesOK=0;
+        linesFail=0
         cursor = self.connection.cursor()
         regex1 = re.compile(self.regexp)
-        result = AutoVivification()
         i=0
         for line in open(self.file):
             parse = line.strip()
@@ -159,12 +190,21 @@ class logressor:
                     insert="insert into "+self.table+" ("+(",".join(str(e) for e in fieldList))+") values ("+",".join("?" for i in range(0, len(fieldList)))+")"
                     try:
                         cursor.execute(insert, valueList)
+                        linesOK+=1
                     except Exception, e:
                         print "Sqlite error %s:" % e.args[0]
+                        linesFail+=1
 
                 else:
                     print "Error in process: ",line,
+                    linesFail+=1
+        if self.debug:
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" parse end with total "+str(linesOK+linesFail)+" lines (OK: "+str(linesOK)+"/ Fail: "+str(linesFail)+")"
+        if self.debug:
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" commit start"
         self.connection.commit()
+        if self.debug:
+            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" commit end"
 
 
 def main():
@@ -173,7 +213,9 @@ def main():
     #    def format_epilog(self, formatter):
     #        return self.epilog
 
-    usage = "usage: %prog [options]"
+    prog="logressor.py"
+    version=0.2
+    print prog,str(version)
     description = """This script is able to convert log files to sqlite format based 
 on regexp named group method."""
     epilog = """
@@ -181,18 +223,18 @@ Sample usage:
   python logressor.py \\
     sample/s.log \\
     \"^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*\" \\
-    \"{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':{'type':'real'},'v3':'text'}\" \\
-    sample/output.sqlite
+    sample/output.sqlite \\
+    --format \"{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':{'type':'real'}}\" 
 
 """
-    parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter,)
+    parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter, prog=prog)
     parser.add_argument("file",
         metavar="FILE", action="store", 
         help="log file to work on")
     parser.add_argument("regexp",
         metavar="REGEXP", action="store",
         help="regexp with named groups to separate log values")
-    parser.add_argument("format",
+    parser.add_argument("--format",
         metavar="FORMAT", action="store", 
         help="format of named groups in parseable dict")
     parser.add_argument("sqlite",
@@ -201,7 +243,7 @@ Sample usage:
     parser.add_argument("--table",
         metavar="TABLE", action="store", dest="table", nargs="?",
         help="the table name in sqlite database")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 0.1")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s "+str(version))
     parser.add_argument("-d", "--debug",
         action="store_true", dest="debug", default=False, 
         help='debug (default: %(default)s)')
@@ -209,7 +251,7 @@ Sample usage:
         action="store_true", dest="drop", default=False, 
         help='drop table before create (default: %(default)s)')
     options = parser.parse_args()
-    if options.file == None or options.regexp == None or options.format == None or options.sqlite == None:
+    if options.file == None or options.regexp == None or options.sqlite == None:
         parser.error("Incorrect number of arguments! Check required fields!")
         sys.exit()
     if not os.path.isfile(options.file):
@@ -229,7 +271,7 @@ Sample usage:
 
     processor = logressor()
 
-    if not  processor.testFormat(options.format):
+    if (options.format != None) and (processor.testFormat(options.format) == False):
         parser.error("FORMAT can't evaluate to dict!")
         sys.exit()
 
