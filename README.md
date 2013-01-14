@@ -14,4 +14,31 @@ todo
 
 usage
 =====
-  python logressor.py sample/s.log "^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*" "{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':{'type':'real'},'v3':'text'}" sample/output.sqlite
+```
+> python logressor.py -h
+usage: logressor.py [-h] [--table [TABLE]] [-v] [-d] [--drop]
+                    FILE REGEXP FORMAT SQLITEFILE
+
+This script is able to convert log files to sqlite format based 
+on regexp named group method.
+
+positional arguments:
+  FILE             log file to work on
+  REGEXP           regexp with named groups to separate log values
+  FORMAT           format of named groups in parseable dict
+  SQLITEFILE       the result sqlite file name
+
+optional arguments:
+  -h, --help       show this help message and exit
+  --table [TABLE]  the table name in sqlite database
+  -v, --version
+  -d, --debug      debug (default: False)
+  --drop           drop table before create (default: False)
+
+Sample usage:
+  python logressor.py \
+    sample/s.log \
+    "^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*" \
+    "{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':{'type':'real'},'v3':'text'}" \
+    sample/output.sqlite
+```
