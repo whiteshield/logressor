@@ -9,7 +9,6 @@ import ast
 import argparse
 import sys
 
-
 class logressor:
     """
     Log manipulator class
@@ -17,6 +16,7 @@ class logressor:
     def __init__(self):
         """Variable initialization."""
         self.debug=False
+        self.list=False
         self.file=''
         self.regexp=''
         self.format={}
@@ -24,18 +24,28 @@ class logressor:
         self.table='data'
         self.drop=False
         self.sql=''
+        self.logType=''
+        self.logTypes=[]
         self.fields=[]
         self.timestamps={}
+        self.reals=[]
+        self.stdIn=False
 
     def setInputDebug(self, debug):
         """Set the class variable debug."""
         self.debug=debug
+    def setInputList(self, list):
+        """Set the class variable list."""
+        self.list=list
     def setInputDrop(self, drop):
         """Set the class variable drop."""
         self.drop=drop
     def setInputFile(self, file):
         """Set the class variable file."""
-        self.file=file
+        if file == None:
+            self.stdIn=True
+        else:
+            self.file=file
     def setInputRegexp(self, regexp):
         """Set the class variable regexp."""
         self.regexp=regexp
@@ -43,6 +53,10 @@ class logressor:
         """Set the class variable format."""
         if format != None:
             self.format=format
+    def setInputLogType(self, logtype):
+        """Set the class variable logType."""
+        if logtype != None:
+            self.logType=logtype
     def setInputSqlite(self, sqlite):
         """Set the class variable sqlite."""
         self.sqlite=sqlite
@@ -54,46 +68,78 @@ class logressor:
         """Display configuration options."""
         print ""
         print "     debug: " + str(self.debug)
+        print "      list: " + str(self.list)
         print "      file: " + str(self.file)
+        print "     stdIn: " + str(self.stdIn)
         print "    regexp: " + str(self.regexp)
         print "    format: " + str(self.format)
+        print "   logType: " + str(self.logType)
+        print "  logTypes: " + str(self.logTypes)
         print "    sqlite: " + str(self.sqlite)
         print "     table: " + str(self.table)
         print "      drop: " + str(self.drop)
         print "    fields: " + str(self.fields)
         print "timestamps: " + str(self.timestamps)
+        print "     reals: " + str(self.reals)
         print "       sql: " + str(self.sql)
         print ""
     def process(self):
         """Start the program!"""
-        self.loadFields()
-        finalSql="\n"
-        if self.drop:
-            finalSql = finalSql + "drop table if exists " + self.table + ";\n"
-        finalSql = finalSql + "create table if not exists " + self.table +" \n" + self.sql
-        self.sql = finalSql
+        if not self.list:
+            if self.logType!='':
+                self.loadLogTypes()
+            self.loadFields()
+            finalSql="\n"
+            if self.drop:
+                finalSql = finalSql + "drop table if exists " + self.table + ";\n"
+            finalSql = finalSql + "create table if not exists " + self.table +" \n" + self.sql
+            self.sql = finalSql
 
-        if self.debug:
-            self.showOptions()
-            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process start"
+            if self.debug:
+                self.showOptions()
+                print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process start"
 
+            try:
+                self.connection = sqlite3.connect(self.sqlite)
+                cursor = self.connection.cursor()    
+                #insert into d values (null, '11:10', 'front', 'method', 'POST', 20, 20);
+                sqlCommands=self.sql.split(';')
+                for query in sqlCommands:
+                    cursor.execute(query)
+                self.parseFile()
+            except sqlite3.Error, e:
+                sys.stderr.write("EM01 Sqlite error: %s\n" % e.args[0])
+                sys.exit()
+            finally:
+                if self.connection:
+                    self.connection.close()
+            if self.debug:
+                print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process end"
+            print ('stdin' if self.stdIn else self.file) + " loaded into " + self.sqlite
+            print "try it: sqlite3 "+self.sqlite+" \"select "+','.join(self.fields)+" from "+ self.table+" limit 10\""
+        elif self.list :
+            print "logtypes:"
+            for logType in self.logTypes:
+                print " - " + logType
+
+    def loadLogTypes(self):
+        if os.path.isfile(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'logressor.dict') :
+            logressorFormat = open(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'logressor.dict').read()
+            self.loadFormatsFromFile(logressorFormat)
+
+        if os.path.isfile(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'user.dict') :
+            logressorFormat = open(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'user.dict').read()
+            self.loadFormatsFromFile(logressorFormat)
+
+    def loadFormatsFromFile(self,dict):
         try:
-            self.connection = sqlite3.connect(self.sqlite)
-            cursor = self.connection.cursor()    
-            #insert into d values (null, '11:10', 'front', 'method', 'POST', 20, 20);
-            sqlCommands=self.sql.split(';')
-            for query in sqlCommands:
-                cursor.execute(query)
-            self.parseFile()
-        except sqlite3.Error, e:
-            print "Sqlite error %s:" % e.args[0]
-            sys.exit()
-        finally:
-            if self.connection:
-                self.connection.close()
-        if self.debug:
-            print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process end"
-        print self.file + " loaded into " + self.sqlite
+            dictFile=ast.literal_eval(dict)
+            for logTypeName,logTypeValue in dictFile.iteritems():
+                if logTypeName==self.logType:
+                    self.regexp=logTypeValue.get('regexp')
+                    self.format=str(logTypeValue.get('format')) if logTypeValue.get('format') else ''
+        except Exception, e:
+            sys.stderr.write("ED04 Dict read error: %s\n" % e.args[0])
 
     def loadFields(self):
         regexp1=re.compile("\?P<(\w+)>")
@@ -122,6 +168,8 @@ class logressor:
                     fieldType=formatDict.get(fieldName)
                 else:
                     fieldType='text'
+                if fieldType=='real':
+                    self.reals.append(fieldName)
                 if not fieldType in ('real', 'text', 'integer'):
                     fieldType='text'
             else:
@@ -130,6 +178,33 @@ class logressor:
         self.sql=self.sql[0:-3] + '\n)\n'
 
 
+    def testDictFile(self, dict):
+        try:
+            success=True
+            dictFile=ast.literal_eval(dict)
+            for logTypeName,logTypeValue in dictFile.iteritems():
+                self.logTypes.append(logTypeName)
+                if logTypeValue.get('regexp'):
+                    try:
+                        re.compile(logTypeValue.get('regexp'))
+                    except re.error, e:
+                        sys.stderr.write("ED01 REGEXP not valid in " + logTypeName + "\n")
+                        success = False
+                else :
+                    sys.stderr.write("ED02 Dict format error: regexp missing!\n")
+                    success = False
+                if logTypeValue.get('format'):
+                    success = success and self.testFormat(str(logTypeValue.get('format')))
+            return success
+        except Exception, e:
+            sys.stderr.write("ED03 Dict read error: %s\n" % e.args[0])
+            return False
+
+    def testLogType(self, logtype):
+        if not logtype in self.logTypes:
+            return False
+        else:
+            return True       
 
     def testFormat(self, format):
         try:
@@ -142,6 +217,7 @@ class logressor:
                     if attributes.get('type'):
                         fieldType=attributes.get('type')
                     else:
+                        sys.stderr.write("EF01 Missing format type in " + fieldName + "\n")
                         success=False
                     if attributes.get('format') and fieldType == 'timestamp':
                         fieldFormat=attributes.get('format')
@@ -150,10 +226,13 @@ class logressor:
                     fieldType=attributes
                 else:
                     success=False
+                    sys.stderr.write("EF02 Unknown format in " + fieldName + "\n")
                 if not fieldType in ('real', 'text', 'integer'):
                     success=False
+                    sys.stderr.write("EF03 Not valid field type in " + fieldName + "\n")
             return success
         except Exception, e:
+            sys.stderr.write("EF04 Format read error: %s\n" % e.args[0])
             return False
 
     def parseFile(self):
@@ -164,7 +243,11 @@ class logressor:
         cursor = self.connection.cursor()
         regex1 = re.compile(self.regexp)
         i=0
-        for line in open(self.file):
+        if not self.stdIn:
+            filePointer = open(self.file)
+        else:
+            filePointer = sys.stdin
+        for line in filePointer:
             parse = line.strip()
             if len(parse)>0:
                 r1 = regex1.search(parse)
@@ -183,6 +266,13 @@ class logressor:
                                 else :
                                     formattedDate=value.strftime('%Y-%m-%d %H:%M:%S')
                                 valueList.append(formattedDate)
+                            elif f in self.reals:
+                                value=0
+                                try:
+                                    value=float(resultDict.get(f))
+                                except Exception, e:
+                                    pass
+                                valueList.append(value)
                             else:
                                 valueList.append(resultDict.get(f))
                         else:
@@ -192,11 +282,11 @@ class logressor:
                         cursor.execute(insert, valueList)
                         linesOK+=1
                     except Exception, e:
-                        print "Sqlite error %s:" % e.args[0]
+                        sys.stderr.write("EP01 Sqlite error: %s\n" % e.args[0])
                         linesFail+=1
 
                 else:
-                    print "Error in process: ",line,
+                    sys.stderr.write("EP02 Error in regexp process: "+line.strip()+"\n")
                     linesFail+=1
         if self.debug:
             print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" parse end with total "+str(linesOK+linesFail)+" lines (OK: "+str(linesOK)+"/ Fail: "+str(linesFail)+")"
@@ -205,6 +295,8 @@ class logressor:
         self.connection.commit()
         if self.debug:
             print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" commit end"
+        if not self.stdIn:
+            filePointer.close()
 
 
 def main():
@@ -214,32 +306,49 @@ def main():
     #        return self.epilog
 
     prog="logressor.py"
-    version=0.2
+    version=0.3
     print prog,str(version)
     description = """This script is able to convert log files to sqlite format based 
 on regexp named group method."""
     epilog = """
 Sample usage:
+ Process sample 1)
   python logressor.py \\
-    sample/s.log \\
-    \"^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*\" \\
-    sample/output.sqlite \\
-    --format \"{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':{'type':'real'}}\" 
+    --file sample/s.log \\
+    --regexp \"^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*\" \\
+    --sqlite sample/output.sqlite \\
+    --format \"{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':'real'}\" \\
+    --drop
+
+ Process sample 2) (copy user.dict-sample to user.dict!)
+  python logressor.py --file sample/s.log --logtype sample --sqlite sample/output.sqlite --drop
+
+ Process appache access.log
+  cat sample/access.log | python logressor.py --logtype apache --sqlite sample/output.sqlite --drop
+
+ List defined log types
+  python logressor.py --list
 
 """
     parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter, prog=prog)
-    parser.add_argument("file",
-        metavar="FILE", action="store", 
-        help="log file to work on")
-    parser.add_argument("regexp",
+    parser.add_argument("--file",
+        metavar="FILE", action="store",
+        help="log file to work on (or standard input, if parameter not given)")
+    parser.add_argument("--regexp",
         metavar="REGEXP", action="store",
         help="regexp with named groups to separate log values")
     parser.add_argument("--format",
         metavar="FORMAT", action="store", 
         help="format of named groups in parseable dict")
-    parser.add_argument("sqlite",
+    parser.add_argument("--logtype",
+        metavar="TYPE", action="store", 
+        help="predefined log type from logressor.dict or user.dict")
+    parser.add_argument("--list",
+        action="store_true", dest="list", default=False,
+        help="list predefined log types from logressor.dict or user.dict")
+    parser.add_argument("--sqlite",
         metavar="SQLITEFILE", action="store",
-        help="the result sqlite file name")
+        help="the result sqlite file name (or standard output, if parameter not given)")
     parser.add_argument("--table",
         metavar="TABLE", action="store", dest="table", nargs="?",
         help="the table name in sqlite database")
@@ -251,39 +360,60 @@ Sample usage:
         action="store_true", dest="drop", default=False, 
         help='drop table before create (default: %(default)s)')
     options = parser.parse_args()
-    if options.file == None or options.regexp == None or options.sqlite == None:
-        parser.error("Incorrect number of arguments! Check required fields!")
+    if (options.regexp != None or options.format != None ) and options.logtype != None:
+        parser.error("Can't set regexp/format and logtype in same time! It's ambigous!")
         sys.exit()
-    if not os.path.isfile(options.file):
+    if options.regexp == None and options.logtype == None and options.list == None:
+        parser.error("Incorrect number of arguments! Regexp/logtype/list required!")
+        sys.exit()
+    if options.list == None and options.sqlite == None:
+        parser.error("Incorrect number of arguments! Need a sqlite file!")
+        sys.exit()
+    if options.file != None and not os.path.isfile(options.file):
         parser.error(options.file + " does not exists!")
         sys.exit()
-    if not os.access(options.file, os.R_OK):
+    if options.file != None and not os.access(options.file, os.R_OK):
         parser.error(options.file + " access denied!")
         sys.exit()
-    if os.path.isfile(options.sqlite) and not os.access(options.sqlite, os.W_OK):
+    if options.sqlite != None and os.path.isfile(options.sqlite) and not os.access(options.sqlite, os.W_OK):
         parser.error(options.sqlite + " access denied!")
         sys.exit()
-    try:
-        re.compile(options.regexp)
-    except re.error, e:
-        parser.error("REGEXP not valid: " + str(e))
-        sys.exit()
+    if options.regexp!=None:
+        try:
+            re.compile(options.regexp)
+        except re.error, e:
+            parser.error("REGEXP not valid: " + str(e))
+            sys.exit()
 
     processor = logressor()
 
     if (options.format != None) and (processor.testFormat(options.format) == False):
         parser.error("FORMAT can't evaluate to dict!")
         sys.exit()
+    if os.path.isfile(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'logressor.dict') :
+        logressorFormat = open(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'logressor.dict').read()
+        if processor.testDictFile(logressorFormat) == False:
+            parser.error("logressor.dict can't evaluate to dict!")
+            sys.exit()
+    if os.path.isfile(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'user.dict') :
+        logressorFormat = open(os.path.abspath(os.path.dirname(sys.argv[0])) + os.sep + 'user.dict').read()
+        if processor.testDictFile(logressorFormat) == False:
+            parser.error("user.dict can't evaluate to dict!")
+            sys.exit()
+    if (options.logtype != None) and (processor.testLogType(options.logtype) == False):
+        parser.error("Logtype not found in predefined log types!")
+        sys.exit()
 
-    processor.setInputDebug(options.debug)
     processor.setInputFile(options.file)
     processor.setInputRegexp(options.regexp)
     processor.setInputFormat(options.format)
     processor.setInputSqlite(options.sqlite)
     processor.setInputTable(options.table)
     processor.setInputDrop(options.drop)
+    processor.setInputLogType(options.logtype)
+    processor.setInputDebug(options.debug)
+    processor.setInputList(options.list)
     processor.process()
-
 if __name__ == "__main__":
     main()
 

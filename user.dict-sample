@@ -1,0 +1,14 @@
+{
+    'sample': {
+        'regexp': "^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*",
+        'format': {
+            'v1': {
+                'type':'timestamp',
+                'format':'%b %d %H:%M:%S'
+            },
+            'v2':{
+                'type':'real'
+            }
+        }
+    }
+}

@@ -1,0 +1,13 @@
+{
+    'apache': {
+        'regexp': '^(?P<host>\S+)\s+\S+\s+(?P<user>\S+)\s+\[(?P<time>\S+)\s(?P<timezone>\S+)\]\s+"(?P<request>.+)"\s+(?P<status>[0-9]+)\s+(?P<size>\S+)\s+"(?P<referer>.*)"\s+"(?P<agent>.*)"',
+        'format': {
+            'time': {
+                'type':'timestamp',
+                'format':'%d/%b/%Y:%H:%M:%S'
+            },
+            'status':'real',
+            'size':'real'
+        }
+    }
+}
