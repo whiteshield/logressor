@@ -23,6 +23,7 @@ class logressor:
         self.sqlite=''
         self.table='data'
         self.drop=False
+        self.vacuum=False
         self.sql=''
         self.logType=''
         self.logTypes=[]
@@ -30,6 +31,7 @@ class logressor:
         self.timestamps={}
         self.reals=[]
         self.stdIn=False
+        self.remove=[]
 
     def setInputDebug(self, debug):
         """Set the class variable debug."""
@@ -40,6 +42,9 @@ class logressor:
     def setInputDrop(self, drop):
         """Set the class variable drop."""
         self.drop=drop
+    def setInputVacuum(self, vacuum):
+        """Set the class variable vacuum."""
+        self.vacuum=vacuum
     def setInputFile(self, file):
         """Set the class variable file."""
         if file == None:
@@ -49,6 +54,10 @@ class logressor:
     def setInputRegexp(self, regexp):
         """Set the class variable regexp."""
         self.regexp=regexp
+    def setInputRemove(self, remove):
+        """Set the class variable remove."""
+        if remove != None:
+            self.remove=re.compile('\s*,\s*').split(remove)
     def setInputFormat(self, format):
         """Set the class variable format."""
         if format != None:
@@ -66,22 +75,25 @@ class logressor:
             self.table=table
     def showOptions(self):
         """Display configuration options."""
+        justify = 14
         print ""
-        print "     debug: " + str(self.debug)
-        print "      list: " + str(self.list)
-        print "      file: " + str(self.file)
-        print "     stdIn: " + str(self.stdIn)
-        print "    regexp: " + str(self.regexp)
-        print "    format: " + str(self.format)
-        print "   logType: " + str(self.logType)
-        print "  logTypes: " + str(self.logTypes)
-        print "    sqlite: " + str(self.sqlite)
-        print "     table: " + str(self.table)
-        print "      drop: " + str(self.drop)
-        print "    fields: " + str(self.fields)
-        print "timestamps: " + str(self.timestamps)
-        print "     reals: " + str(self.reals)
-        print "       sql: " + str(self.sql)
+        print "debug: ".rjust(justify) + str(self.debug)
+        print "list: ".rjust(justify) + str(self.list)
+        print "file: ".rjust(justify) + str(self.file)
+        print "stdIn: ".rjust(justify) + str(self.stdIn)
+        print "regexp: ".rjust(justify) + str(self.regexp)
+        print "format: ".rjust(justify) + str(self.format)
+        print "logType: ".rjust(justify) + str(self.logType)
+        print "logTypes: ".rjust(justify) + str(self.logTypes)
+        print "sqlite: ".rjust(justify) + str(self.sqlite)
+        print "table: ".rjust(justify) + str(self.table)
+        print "drop: ".rjust(justify) + str(self.drop)
+        print "vacuum: ".rjust(justify) + str(self.vacuum)
+        print "fields: ".rjust(justify) + str(self.fields)
+        print "remove: ".rjust(justify) + str(self.remove)
+        print "timestamps: ".rjust(justify) + str(self.timestamps)
+        print "reals: ".rjust(justify) + str(self.reals)
+        print "sql: ".rjust(justify) + str(('\n'+" "*justify).join(self.sql.split('\n')))
         print ""
     def process(self):
         """Start the program!"""
@@ -100,12 +112,17 @@ class logressor:
                 print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process start"
 
             try:
+                if self.debug:
+                    print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" prepare database start"
                 self.connection = sqlite3.connect(self.sqlite)
                 cursor = self.connection.cursor()    
                 #insert into d values (null, '11:10', 'front', 'method', 'POST', 20, 20);
                 sqlCommands=self.sql.split(';')
                 for query in sqlCommands:
                     cursor.execute(query)
+                self.connection.commit()
+                if self.debug:
+                    print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" prepare database end"
                 self.parseFile()
             except sqlite3.Error, e:
                 sys.stderr.write("EM01 Sqlite error: %s\n" % e.args[0])
@@ -138,6 +155,7 @@ class logressor:
                 if logTypeName==self.logType:
                     self.regexp=logTypeValue.get('regexp')
                     self.format=str(logTypeValue.get('format')) if logTypeValue.get('format') else ''
+                    self.remove=re.compile('\s*,\s*').split(logTypeValue.get('remove')) if logTypeValue.get('remove') else []
         except Exception, e:
             sys.stderr.write("ED04 Dict read error: %s\n" % e.args[0])
 
@@ -145,7 +163,10 @@ class logressor:
         regexp1=re.compile("\?P<(\w+)>")
         results=regexp1.findall(self.regexp) 
         if results:
-            self.fields=results
+            self.fields=[]
+            for field in results:
+                if not field in self.remove  :
+                    self.fields.append(field)
         self.sql='(\n'
         try:
             formatDict=ast.literal_eval(self.format)
@@ -175,7 +196,9 @@ class logressor:
             else:
                 fieldType='text'
             self.sql = self.sql + "  " + fieldName + " " + fieldType + ", \n"
-        self.sql=self.sql[0:-3] + '\n)\n'
+        self.sql=self.sql[0:-3] + '\n);\n'
+        if self.vacuum:
+            self.sql=self.sql+"vacuum;"
 
 
     def testDictFile(self, dict):
@@ -306,7 +329,7 @@ def main():
     #        return self.epilog
 
     prog="logressor.py"
-    version=0.3
+    version=0.4
     print prog,str(version)
     description = """This script is able to convert log files to sqlite format based 
 on regexp named group method."""
@@ -318,6 +341,7 @@ Sample usage:
     --regexp \"^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*\" \\
     --sqlite sample/output.sqlite \\
     --format \"{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':'real'}\" \\
+    --remove \"v3\" \\
     --drop
 
  Process sample 2) (copy user.dict-sample to user.dict!)
@@ -340,6 +364,9 @@ Sample usage:
     parser.add_argument("--format",
         metavar="FORMAT", action="store", 
         help="format of named groups in parseable dict")
+    parser.add_argument("--remove",
+        metavar="FIELDLIST", action="store", 
+        help="comma separated list of removabel fields")
     parser.add_argument("--logtype",
         metavar="TYPE", action="store", 
         help="predefined log type from logressor.dict or user.dict")
@@ -350,20 +377,23 @@ Sample usage:
         metavar="SQLITEFILE", action="store",
         help="the result sqlite file name (or standard output, if parameter not given)")
     parser.add_argument("--table",
-        metavar="TABLE", action="store", dest="table", nargs="?",
+        metavar="TABLE", action="store", nargs="?",
         help="the table name in sqlite database")
     parser.add_argument("-v", "--version", action="version", version="%(prog)s "+str(version))
     parser.add_argument("-d", "--debug",
-        action="store_true", dest="debug", default=False, 
+        action="store_true", default=False, 
         help='debug (default: %(default)s)')
     parser.add_argument("--drop",
-        action="store_true", dest="drop", default=False, 
+        action="store_true", default=False, 
         help='drop table before create (default: %(default)s)')
+    parser.add_argument("--vacuum",
+        action="store_true", default=False, 
+        help='vacuum the database after inserts')
     options = parser.parse_args()
     if (options.regexp != None or options.format != None ) and options.logtype != None:
         parser.error("Can't set regexp/format and logtype in same time! It's ambigous!")
         sys.exit()
-    if options.regexp == None and options.logtype == None and options.list == None:
+    if options.regexp == None and options.logtype == None and options.list == False:
         parser.error("Incorrect number of arguments! Regexp/logtype/list required!")
         sys.exit()
     if options.list == None and options.sqlite == None:
@@ -406,10 +436,12 @@ Sample usage:
 
     processor.setInputFile(options.file)
     processor.setInputRegexp(options.regexp)
+    processor.setInputRemove(options.remove)
     processor.setInputFormat(options.format)
     processor.setInputSqlite(options.sqlite)
     processor.setInputTable(options.table)
     processor.setInputDrop(options.drop)
+    processor.setInputVacuum(options.vacuum)
     processor.setInputLogType(options.logtype)
     processor.setInputDebug(options.debug)
     processor.setInputList(options.list)

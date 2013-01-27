@@ -12,10 +12,11 @@ usage
 =====
 ```
 > python logressor.py -h
-logressor.py 0.3
+logressor.py 0.4
 usage: logressor.py [-h] [--file FILE] [--regexp REGEXP] [--format FORMAT]
-                    [--logtype TYPE] [--list TYPE] --sqlite SQLITEFILE
-                    [--table [TABLE]] [-v] [-d] [--drop]
+                    [--remove FIELDLIST] [--logtype TYPE] [--list]
+                    [--sqlite SQLITEFILE] [--table [TABLE]] [-v] [-d] [--drop]
+                    [--vacuum]
 
 This script is able to convert log files to sqlite format based 
 on regexp named group method.
@@ -26,8 +27,9 @@ optional arguments:
                        not given)
   --regexp REGEXP      regexp with named groups to separate log values
   --format FORMAT      format of named groups in parseable dict
+  --remove FIELDLIST   comma separated list of removabel fields
   --logtype TYPE       predefined log type from logressor.dict or user.dict
-  --list TYPE          list predefined log types from logressor.dict or
+  --list               list predefined log types from logressor.dict or
                        user.dict
   --sqlite SQLITEFILE  the result sqlite file name (or standard output, if
                        parameter not given)
@@ -35,6 +37,7 @@ optional arguments:
   -v, --version
   -d, --debug          debug (default: False)
   --drop               drop table before create (default: False)
+  --vacuum             vacuum the database after inserts
 
 Sample usage:
  Process sample 1)
@@ -43,12 +46,16 @@ Sample usage:
     --regexp "^(?P<v1>.{15})\s+(?P<v2>\S+)\s+(?P<v3>\S+)*" \
     --sqlite sample/output.sqlite \
     --format "{'v1':{'type':'timestamp','format':'%b %d %H:%M:%S'},'v2':'real'}" \
+    --remove "v3" \
     --drop
 
- Process sample 2) (copy user.dict-sample to user.dict)
+ Process sample 2) (copy user.dict-sample to user.dict!)
   python logressor.py --file sample/s.log --logtype sample --sqlite sample/output.sqlite --drop
 
  Process appache access.log
   cat sample/access.log | python logressor.py --logtype apache --sqlite sample/output.sqlite --drop
+
+ List defined log types
+  python logressor.py --list
 
 ```
