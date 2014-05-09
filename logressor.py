@@ -17,6 +17,7 @@ class logressor:
     """
     def __init__(self, inputargs):
         """Variable initialization."""
+        self.silent=False
         self.debug=False
         self.list=False
         self.file=''
@@ -37,8 +38,7 @@ class logressor:
         self.remove=[]
         prog="logressor.py"
         version=0.5
-        print prog,str(version)
-        description = """This script is able to convert log files to sqlite format based 
+        description = prog+" "+str(version) + "\n" +"""This script is able to convert log files to sqlite format based 
     on regexp named group method."""
         epilog = """
     Sample usage:
@@ -99,6 +99,9 @@ class logressor:
         parser.add_argument("--vacuum",
             action="store_true", default=False, 
             help='vacuum the database after inserts')
+        parser.add_argument("--silent",
+            action="store_true", default=False, 
+            help='silent mode')
         options = parser.parse_args(args=inputargs)
         if (options.regexp != None or options.format != None ) and options.logtype != None:
             parser.error("Can't set regexp/format and logtype in same time! It's ambigous!")
@@ -143,6 +146,7 @@ class logressor:
             parser.error("Logtype not found in predefined log types!")
             sys.exit()
 
+        self.setInputSilent(options.silent)
         self.setInputFile(options.file)
         self.setInputRegexp(options.regexp)
         self.setInputRemove(options.remove)
@@ -158,6 +162,9 @@ class logressor:
         self.process()
 
 
+    def setInputSilent(self, silent):
+        """Set the class variable silent."""
+        self.silent=silent
     def setInputDebug(self, debug):
         """Set the class variable debug."""
         self.debug=debug
@@ -261,6 +268,7 @@ class logressor:
                     self.connection.close()
             if self.debug:
                 print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process end"
+            if not self.silent:
             print ('stdin' if self.stdIn else self.file) + " loaded into " + self.sqlite
             print "try it: sqlite3 "+self.sqlite+" \"select "+','.join(self.fields)+" from "+ self.table+" limit 10\""
         elif self.list :
@@ -415,6 +423,7 @@ class logressor:
                     else:
                         linesFail+=1
                 else:
+                    if not self.silent:
                     sys.stderr.write("EP02 Error in regexp process: "+line.strip()+"\n")
                     linesFail+=1
         if self.debug:
