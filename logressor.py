@@ -269,8 +269,8 @@ class logressor:
             if self.debug:
                 print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" process end"
             if not self.silent:
-            print ('stdin' if self.stdIn else self.file) + " loaded into " + self.sqlite
-            print "try it: sqlite3 "+self.sqlite+" \"select "+','.join(self.fields)+" from "+ self.table+" limit 10\""
+                print ('stdin' if self.stdIn else self.file) + " loaded into " + self.sqlite
+                print "try it: sqlite3 "+self.sqlite+" \"select "+','.join(self.fields)+" from "+ self.table+" limit 10\""
         elif self.list :
             print "logtypes:"
             for logType in self.logTypes:
@@ -424,8 +424,8 @@ class logressor:
                         linesFail+=1
                 else:
                     if not self.silent:
-                    sys.stderr.write("EP02 Error in regexp process: "+line.strip()+"\n")
-                    linesFail+=1
+                        sys.stderr.write("EP02 Error in regexp process: "+line.strip()+"\n")
+                        linesFail+=1
         if self.debug:
             print datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" parse end with total "+str(linesOK+linesFail)+" lines (OK: "+str(linesOK)+"/ Fail: "+str(linesFail)+")"
         if self.debug:
